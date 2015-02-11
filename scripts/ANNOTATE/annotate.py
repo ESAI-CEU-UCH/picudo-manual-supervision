@@ -18,6 +18,9 @@ print "   U. undo, elimina el ultimo bloque insertado"
 # pyaudio
 PyAudio = pyaudio.PyAudio()
 
+def in_region(pos, b, e):
+   return b <= pos and pos <= e
+
 def everyOther (v, nch=2, offset=0):
    return [v[i] for i in range(offset, len(v), nch)]
 
@@ -200,6 +203,37 @@ class Sample:
       self.range_poly = self.canvas.create_rectangle(x0, 0, x1, HEIGHT,
                                                      fill="yellow",
                                                      stipple="gray25")
+   def delete_selected_block(self):
+      if self.selected_block_index >= 0:
+         blk = self.blocks[self.selected_block_index]
+         self.canvas.delete(blk[2])
+         del self.blocks[self.selected_block_index]
+         self.reset_range()
+      self.selected_block_index = -1
+      
+   def select_block_at(self, pos):
+      self.reset_range()
+      pos = int(self.canvas2wav(pos))
+      self.select_block_pos = pos
+      for i,blk in zip(range(len(self.blocks)),self.blocks):
+         if in_region(pos, blk[0], blk[1]):
+            self.selected_block_index = i
+            self.set_at(self.wav2canvas(blk[0]))
+            self.set_range_end(self.wav2canvas(blk[1]))
+            return
+      self.selected_block_index = -1
+
+   def move_selected_block(self, pos):
+      if self.selected_block_index >= 0:
+         pos = int(self.canvas2wav(pos))
+         inc = pos - self.select_block_pos
+         self.select_block_pos = pos
+         blk = self.blocks[self.selected_block_index]
+         blk[0] += inc
+         blk[1] += inc
+         self.reset_range()
+         self.canvas.delete(blk[2])
+         blk[2] = self.draw_block(blk[0], blk[1])
    
    def get_region(self):
       start = self.at
@@ -235,12 +269,12 @@ class Sample:
          self.canvas.delete(self.blocks[-1][2])
          self.blocks.pop()
 
-   def draw_block(self, begin_frame, end_frame):
+   def draw_block(self, begin_frame, end_frame, color="blue"):
       x0 = self.wav2canvas(max(0, begin_frame - self.frames_offset))
       x1 = self.wav2canvas(min(len(self.frames), end_frame - self.frames_offset))
       if x0 < x1:
          return self.canvas.create_rectangle(x0, 0, x1, HEIGHT,
-                                             fill="blue", stipple="gray50")
+                                             fill=color, stipple="gray50")
       else:
          return None
 
@@ -306,28 +340,34 @@ class App:
       self.canvas.bind('<ButtonRelease-1>', self.on_release)
 
    def on_click(self, event):
-      self.sample.reset_range()
-      self.sample.set_at(self.canvas.canvasx(event.x))
-      Hz = float(self.sample.Hz)
-      frame = self.sample.frames_offset + self.sample.at
-      pos = frame/Hz
-      self.pos_label_text.set("%.6f"%( pos ))
-      if self.mouse_mode == APPEND_MOUSE_MODE:
-         self.block_start = frame
-         self.block_end   = frame
+      if self.mouse_mode != MOVE_MOUSE_MODE:
+         self.sample.reset_range()
+         self.sample.set_at(self.canvas.canvasx(event.x))
+         Hz = float(self.sample.Hz)
+         frame = self.sample.frames_offset + self.sample.at
+         pos = frame/Hz
+         self.pos_label_text.set("%.6f"%( pos ))
+         if self.mouse_mode == APPEND_MOUSE_MODE:
+            self.block_start = frame
+            self.block_end   = frame
+      else:
+         self.sample.select_block_at(self.canvas.canvasx(event.x))
       
    def on_motion(self, event):
-      self.sample.set_range_end(self.canvas.canvasx(event.x))
-      x1,x2 = self.sample.get_region()
-      Hz = float(self.sample.Hz)
-      f1 = self.sample.frames_offset + x1
-      f2 = self.sample.frames_offset + x2
-      x1 = f1/Hz
-      x2 = f2/Hz
-      self.pos_label_text.set("%.6f - %.6f" % ( x1, x2 ))
-      if self.mouse_mode == APPEND_MOUSE_MODE:
-         self.block_start = f1
-         self.block_end   = f2
+      if self.mouse_mode != MOVE_MOUSE_MODE:
+         self.sample.set_range_end(self.canvas.canvasx(event.x))
+         x1,x2 = self.sample.get_region()
+         Hz = float(self.sample.Hz)
+         f1 = self.sample.frames_offset + x1
+         f2 = self.sample.frames_offset + x2
+         x1 = f1/Hz
+         x2 = f2/Hz
+         self.pos_label_text.set("%.6f - %.6f" % ( x1, x2 ))
+         if self.mouse_mode == APPEND_MOUSE_MODE:
+            self.block_start = f1
+            self.block_end   = f2
+      else:
+         self.sample.move_selected_block(self.canvas.canvasx(event.x))
       
    def on_release(self, event):
       if self.mouse_mode == APPEND_MOUSE_MODE:
@@ -342,13 +382,19 @@ class App:
          # normal key
          ch = event.char
          if ch == SELECTION_MOUSE_MODE:
+            self.sample.reset_range()
             self.mouse_mode = SELECTION_MOUSE_MODE
          elif ch == APPEND_MOUSE_MODE:
+            self.sample.reset_range()
             self.mouse_mode = APPEND_MOUSE_MODE
          elif ch == MOVE_MOUSE_MODE:
+            self.sample.reset_range()
             self.mouse_mode = MOVE_MOUSE_MODE
          elif ch == UNDO:
             self.sample.pop_block()
+      else:
+         if event.keysym == "Delete":
+            self.sample.delete_selected_block()
 
    def zoom_in(self):
       self.sample.zoom_in()
