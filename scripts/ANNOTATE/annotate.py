@@ -1,3 +1,25 @@
+"""
+  Copyright (c) 2015 Francisco Zamora-Martinez (francisco.zamora@uch.ceu.es)
+  
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+  
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+  
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+  IN THE SOFTWARE.
+"""
+
 import Tkinter, sys, wave, struct, gc, pyaudio, time, os
 
 UPDATES_PER_SECOND=12
@@ -9,22 +31,22 @@ SELECTION_MOUSE_MODE = '1'
 APPEND_MOUSE_MODE = '2'
 MOVE_MOUSE_MODE = '3'
 
-print "Teclas especiales:"
-print "   1. cambia a modo solo seleccion de audio"
-print "   2. cambia a modo insercion de bloque picudo"
-print "   3. cambia a modo mover/borrar bloque picudo"
-print "   U. undo, elimina el ultimo bloque insertado"
-
-# pyaudio
-PyAudio = pyaudio.PyAudio()
-
 def in_region(pos, b, e):
+   """ Returns pos \in [b,e] """
    return b <= pos and pos <= e
 
-def everyOther (v, nch=2, offset=0):
-   return [v[i] for i in range(offset, len(v), nch)]
+def take_channel_data(v, nch=2, ch=0):
+   """ Returns the data of v corresponding to the given channel ch """
+   return [v[i] for i in range(ch, len(v), nch)]
 
-def make_callback(observer, raw, frame_size, start, stop):
+def make_stream_callback(observer, raw, frame_size, start, stop):
+   """
+   Builds a callback function for stream plying. The observer is an object
+   which implements methods 'observer.set_playing_region(b,e)' and
+   'observer.set_playing_end(e)'. raw is the wave data in a str object.
+   frame_size is the number of bytes times number of channels per frame.
+   start and stop indicate which slice of raw would be played.
+   """
    start_ref = [ start ]
    def callback(in_data, frame_count, time_info, status):
       start = start_ref[0]
@@ -39,6 +61,12 @@ def make_callback(observer, raw, frame_size, start, stop):
 stream = None
 
 def play(observer, B, CH, Hz, raw, start, stop):
+   """
+   Receives an observer (as in make_stream_callback function), the number of
+   bytes per frame, the number of channels, the sampling freq, the raw wave
+   data, and a slice positions [start,stop]. Executes stream playing in
+   background.
+   """
    global stream,PyAudio
    if stream is None or not stream.is_active():
       try:
@@ -48,7 +76,7 @@ def play(observer, B, CH, Hz, raw, start, stop):
                                channels=CH,
                                rate=Hz,
                                output=True,
-                               stream_callback=make_callback(observer,
+                               stream_callback=make_stream_callback(observer,
                                                              raw,
                                                              B*CH,
                                                              start,
@@ -59,6 +87,12 @@ def play(observer, B, CH, Hz, raw, start, stop):
          PyAudio = pyaudio.PyAudio()
 
 class Sample:
+   """
+   Class for supervision of a sample of data, contains wave data information,
+   selected blocks of audio, regions, read operations, move regions, delete
+   regions, ...
+   """
+
    def __init__(self, filename, canvas):
       self.width  = DEFWIDTH # zoom width (in seconds)
       self.canvas = canvas
@@ -105,7 +139,7 @@ class Sample:
          exit(1)
       if self.CH > 1:
          # take only mono source
-         frames = everyOther(frames, self.CH, 0)
+         frames = take_channel_data(frames, self.CH, 0)
       self.frames.extend(frames)
 
    def redraw(self):
@@ -284,6 +318,11 @@ class Sample:
       print basename,dirname
 
 class App:
+   """
+   Contains the basic UI interface. Draws in screen all the needed buttons,
+   canvas, etc, and declares the keyboard/mouse bindings which interact between
+   Sample class and user events.
+   """
 
    def __init__(self, master, files, output, pos=0):
       self.mouse_mode = SELECTION_MOUSE_MODE
@@ -429,6 +468,15 @@ class App:
       self.sample = Sample(self.files[self.pos], self.canvas)
 
 if __name__ == "__main__":
+   # pyaudio
+   PyAudio = pyaudio.PyAudio()
+
+   print "Teclas especiales:"
+   print "   1. cambia a modo solo seleccion de audio"
+   print "   2. cambia a modo insercion de bloque picudo"
+   print "   3. cambia a modo mover/borrar bloque picudo"
+   print "   U. undo, elimina el ultimo bloque insertado"
+   
    files = [ line.rstrip() for line in open(sys.argv[1]).readlines() ]
    output = sys.argv[2]
    if len(sys.argv) > 3:
@@ -440,5 +488,4 @@ if __name__ == "__main__":
       root = Tkinter.Tk()
       app  = App(root, files, output, pos)
       root.mainloop()
-
-PyAudio.terminate()
+   PyAudio.terminate()
