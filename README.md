@@ -1,1 +1,1 @@
-# picudo-manual-supervision
+# Supervisión manual del picudo
