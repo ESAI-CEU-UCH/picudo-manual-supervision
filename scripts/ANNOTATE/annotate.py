@@ -25,7 +25,7 @@ import Tkinter, sys, wave, struct, gc, pyaudio, time, os
 UPDATES_PER_SECOND=12
 WIDTH=1200
 HEIGHT=600
-DEFWIDTH=4 # in seconds
+DEFWIDTH=10 # in seconds
 UNDO = 'U'
 SELECTION_MOUSE_MODE = '1'
 APPEND_MOUSE_MODE = '2'
@@ -148,15 +148,15 @@ class Sample:
       self.canvas.delete(Tkinter.ALL)
       frames = self.frames
       canvas = self.canvas
+      points = []
       v = HEIGHT/2
-      x = self.wav2canvas(0)
-      y = v - frames[0]*self.vratio
-      for i in range(1,len(frames)):
-         y2 = v - frames[i]*self.vratio
-         x2 = self.wav2canvas(i)
-         canvas.create_line(x,y,x2,y2,fill="green")
-         x  = x2
-         y  = y2
+      for i in range(len(frames)):
+         x = self.wav2canvas(i)
+         y = v - frames[i]*self.vratio
+         points.append(x)
+         points.append(y)
+      x = points[-2]
+      canvas.create_line(fill="green", *points)
       canvas.config(scrollregion=(0, 0, x, HEIGHT))
       canvas.create_line(x/2,0,x/2,HEIGHT,fill="gray")
       for blk in self.blocks:
@@ -170,11 +170,11 @@ class Sample:
       # self.canvas.xview_moveto(self.wav2canvas(self.at))
       
    def zoom_in(self):
-      self.width = self.width * 0.6
+      self.width = self.width * 0.5
       self.redraw()
 
    def zoom_out(self):
-      self.width = self.width * 1.4
+      self.width = self.width * 2.0
       self.redraw()
 
    def zoom_region(self):
