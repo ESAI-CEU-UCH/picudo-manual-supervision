@@ -238,12 +238,16 @@ class Sample:
                                                      fill="yellow",
                                                      stipple="gray25")
    def delete_selected_block(self):
+      result = True
       if self.selected_block_index >= 0:
          blk = self.blocks[self.selected_block_index]
          self.canvas.delete(blk[2])
          del self.blocks[self.selected_block_index]
          self.reset_range()
+      else:
+         result = False
       self.selected_block_index = -1
+      return result
       
    def select_block_at(self, pos):
       self.reset_range()
@@ -254,8 +258,9 @@ class Sample:
             self.selected_block_index = i
             self.set_at(self.wav2canvas(blk[0]))
             self.set_range_end(self.wav2canvas(blk[1]))
-            return
+            return True
       self.selected_block_index = -1
+      return False
 
    def move_selected_block(self, pos):
       if self.selected_block_index >= 0:
@@ -390,7 +395,16 @@ class App:
             self.block_start = frame
             self.block_end   = frame
       else:
-         self.sample.select_block_at(self.canvas.canvasx(event.x))
+         if self.sample.select_block_at(self.canvas.canvasx(event.x)):
+            x1,x2 = self.sample.get_region()
+            Hz = float(self.sample.Hz)
+            f1 = self.sample.frames_offset + x1
+            f2 = self.sample.frames_offset + x2
+            x1 = f1/Hz
+            x2 = f2/Hz
+            self.pos_label_text.set("%.6f - %.6f" % ( x1, x2 ))
+         else:
+            self.pos_label_text.set("")
       
    def on_motion(self, event):
       if self.mouse_mode != MOVE_MOUSE_MODE:
@@ -407,6 +421,7 @@ class App:
             self.block_end   = f2
       else:
          self.sample.move_selected_block(self.canvas.canvasx(event.x))
+         self.pos_label_text.set("")
       
    def on_release(self, event):
       if self.mouse_mode == APPEND_MOUSE_MODE:
@@ -416,24 +431,29 @@ class App:
             self.block_end   = None
             self.sample.reset_range()
 
+   def reset_range(self):
+      self.sample.reset_range()
+      self.pos_label_text.set("")
+
    def on_key(self, event):
       if event.char == event.keysym:
          # normal key
          ch = event.char
          if ch == SELECTION_MOUSE_MODE:
-            self.sample.reset_range()
+            self.reset_range()
             self.mouse_mode = SELECTION_MOUSE_MODE
          elif ch == APPEND_MOUSE_MODE:
-            self.sample.reset_range()
+            self.reset_range()
             self.mouse_mode = APPEND_MOUSE_MODE
          elif ch == MOVE_MOUSE_MODE:
-            self.sample.reset_range()
+            self.reset_range()
             self.mouse_mode = MOVE_MOUSE_MODE
          elif ch == UNDO:
             self.sample.pop_block()
       else:
          if event.keysym == "Delete":
-            self.sample.delete_selected_block()
+            if self.sample.delete_selected_block():
+               self.reset_range()
 
    def zoom_in(self):
       self.sample.zoom_in()
