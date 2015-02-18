@@ -100,6 +100,7 @@ class Sample:
    def __init__(self, filename, info, canvas):
       self.width  = DEFWIDTH # zoom width (in seconds)
       self.canvas = canvas
+      print filename
       self.sample = wave.open(filename, 'rb')
       self.CH  = self.sample.getnchannels()
       self.B   = self.sample.getsampwidth()
@@ -404,16 +405,16 @@ class App:
                                  command=self.go_next_file)
       nf_button.pack(side=Tkinter.LEFT)
       play_button = Tkinter.Button(frame, text="Play",
-                                   command=self.sample.play)
+                                   command=self.play)
       play_button.pack(side=Tkinter.LEFT)
       region_button = Tkinter.Button(frame, text="Z region",
-                                     command=self.sample.zoom_region)
+                                     command=self.zoom_region)
       region_button.pack(side=Tkinter.LEFT)
       reload_button = Tkinter.Button(frame, text="Reload",
-                                     command=self.sample.load_info)
+                                     command=self.load_info)
       reload_button.pack(side=Tkinter.LEFT)
       write_button = Tkinter.Button(frame, text="Write",
-                                    command=self.sample.write_info)
+                                    command=self.write_info)
       write_button.pack(side=Tkinter.LEFT)
       # label text
       self.update_label_text()
@@ -422,6 +423,18 @@ class App:
       self.canvas.bind('<Button-1>', self.on_click)
       self.canvas.bind('<B1-Motion>', self.on_motion)
       self.canvas.bind('<ButtonRelease-1>', self.on_release)
+
+   def play(self):
+      self.sample.play()
+
+   def zoom_region(self):
+      self.sample.zoom_region()
+   
+   def load_info(self):
+      self.sample.load_info()
+
+   def write_info(self):
+      self.sample.write_info()
 
    def on_click(self, event):
       if self.mouse_mode != MOVE_MOUSE_MODE:
@@ -502,10 +515,12 @@ class App:
       self.sample.zoom_out()
 
    def update_label_text(self):
-      self.label_text.set("%s ||| %d/%d ||| %.2f:%.2f / %.2f"%
-                          (self.files[pos], pos+1, len(self.files),
-                           self.sample.offset, self.sample.offset + DEFWIDTH,
-                           self.sample.get_duration()))
+      msg = "%s ||| %d/%d ||| %.2f:%.2f / %.2f"%(self.files[self.pos],
+                                                 self.pos+1, len(self.files),
+                                                 self.sample.offset,
+                                                 self.sample.offset + DEFWIDTH,
+                                                 self.sample.get_duration())
+      self.label_text.set(msg)
 
    def go_next(self):
       self.pos_label_text.set("")
@@ -550,10 +565,12 @@ if __name__ == "__main__":
       print "Incorrect number of files in the given lists"
       exit(1)
    if len(sys.argv) > 3:
-      pos = int(sys.argv[3])
+      pos = int(sys.argv[3]) - 1
    else:
       pos = 0
-      #
+   if pos < 0 or pos >= len(files):
+      print "Incorrect START file number"
+      exit(1)
    if len(files) > 0:    
       root = Tkinter.Tk()
       app  = App(root, files, infos, pos)
