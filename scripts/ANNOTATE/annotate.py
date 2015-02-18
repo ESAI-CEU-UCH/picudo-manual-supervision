@@ -22,6 +22,10 @@
 
 import Tkinter, sys, wave, struct, gc, pyaudio, time, os
 
+if len(sys.argv) < 3:
+   print "SYNTAX: python %s WAV_LIST INFO_LIST [START]"%(sys.argv[0])
+   exit(1)
+
 UPDATES_PER_SECOND=12
 WIDTH=1200
 HEIGHT=600
@@ -93,16 +97,17 @@ class Sample:
    regions, ...
    """
 
-   def __init__(self, filename, canvas):
+   def __init__(self, filename, info, canvas):
       self.width  = DEFWIDTH # zoom width (in seconds)
       self.canvas = canvas
       self.sample = wave.open(filename, 'rb')
-      self.filename = filename
-      self.blocks = []
       self.CH  = self.sample.getnchannels()
       self.B   = self.sample.getsampwidth()
       self.N   = self.sample.getnframes()
       self.Hz  = self.sample.getframerate()
+      self.filename = filename
+      self.info = info
+      self.blocks = []
       self.frame_size = self.B*self.CH
       self.LEN = self.N/float(self.Hz)
       self.offset = 0.0 # in seconds
@@ -115,6 +120,25 @@ class Sample:
       self.read()
       self.read()
       self.redraw()
+      self.load_info()
+
+   def load_info(self):
+      while len(self.blocks) > 0:
+         self.pop_block()
+      info = self.info
+      if os.path.isfile(info):
+         for line in open(info).readlines():
+            x,y = map(lambda x: int(float(x)*self.Hz), line.split())
+            self.append_block(x,y)
+      print "RELOADED ",self.info
+   
+   def write_info(self):
+      f = open(self.info, "w")
+      f.write('\n'.join(map(lambda x: str(float(x[0])/self.Hz) +" "+ str(float(x[1])/self.Hz),
+                            self.blocks)))
+      f.write('\n')
+      f.close()
+      print "SAVED ",self.info
    
    def get_duration(self):
       return self.LEN
@@ -133,13 +157,15 @@ class Sample:
       raw     = self.sample.readframes(M2)
       self.raw = self.raw + raw
       if self.B == 2:
-         frames = struct.unpack_from ("%dh" % (len(raw)/self.B), raw)
+         frames = list(struct.unpack_from ("%dh" % (len(raw)/self.B), raw))
       else:
          print "Unable to unpack the given wave data, not implemented size"
          exit(1)
       if self.CH > 1:
          # take only mono source
          frames = take_channel_data(frames, self.CH, 0)
+      while len(frames) < M2:
+         frames.append(0)
       self.frames.extend(frames)
 
    def redraw(self):
@@ -185,8 +211,9 @@ class Sample:
          
    def go_next(self):
       self.reset_range()
-      self.offset = min(self.offset + DEFWIDTH/2, self.LEN)
-      if self.offset < self.LEN:
+      new_offset = self.offset + DEFWIDTH/2
+      if new_offset + DEFWIDTH/2 < self.LEN:
+         self.offset = new_offset
          half_size = len(self.frames)/2
          self.frames_offset += half_size
          self.raw = self.raw[ (len(self.raw)/2): ]
@@ -195,18 +222,19 @@ class Sample:
          self.redraw()
       
    def go_previous(self):
-      self.reset_range()
-      self.offset = max(0,self.offset - DEFWIDTH/2)
-      other_half_size = len(self.frames) - (len(self.frames)/2)
-      self.frames_offset = max(0, self.frames_offset - other_half_size)
-      self.positions.pop() # current position
-      self.positions.pop() # half position
-      self.sample.setpos( self.positions.pop() ) # start position
-      self.raw = str()
-      self.frames = []
-      self.read()
-      self.read()
-      self.redraw()
+      if not self.started():
+         self.reset_range()
+         self.offset = max(0,self.offset - DEFWIDTH/2)
+         other_half_size = len(self.frames) - (len(self.frames)/2)
+         self.frames_offset = max(0, self.frames_offset - other_half_size)
+         self.positions.pop() # current position
+         self.positions.pop() # half position
+         self.sample.setpos( self.positions.pop() ) # start position
+         self.raw = str()
+         self.frames = []
+         self.read()
+         self.read()
+         self.redraw()
 
    def finished(self):
       return self.offset == self.LEN
@@ -251,20 +279,20 @@ class Sample:
       
    def select_block_at(self, pos):
       self.reset_range()
-      pos = int(self.canvas2wav(pos))
+      pos = self.frames_offset + int(self.canvas2wav(pos))
       self.select_block_pos = pos
       for i,blk in zip(range(len(self.blocks)),self.blocks):
          if in_region(pos, blk[0], blk[1]):
             self.selected_block_index = i
-            self.set_at(self.wav2canvas(blk[0]))
-            self.set_range_end(self.wav2canvas(blk[1]))
+            self.set_at(self.wav2canvas(blk[0] - self.frames_offset))
+            self.set_range_end(self.wav2canvas(blk[1] - self.frames_offset))
             return True
       self.selected_block_index = -1
       return False
 
    def move_selected_block(self, pos):
       if self.selected_block_index >= 0:
-         pos = int(self.canvas2wav(pos))
+         pos = self.frames_offset + int(self.canvas2wav(pos))
          inc = pos - self.select_block_pos
          self.select_block_pos = pos
          blk = self.blocks[self.selected_block_index]
@@ -299,9 +327,9 @@ class Sample:
    def set_playing_end(self, stop):
       self.set_playing_at(stop)
 
-   def append_block(self, begin_second, end_second):
-      self.blocks.append( [begin_second, end_second,
-                           self.draw_block(begin_second, end_second)] )
+   def append_block(self, begin_frame, end_frame):
+      self.blocks.append( [begin_frame, end_frame,
+                           self.draw_block(begin_frame, end_frame)] )
       
    def pop_block(self):
       if len(self.blocks) > 0:
@@ -329,7 +357,7 @@ class App:
    Sample class and user events.
    """
 
-   def __init__(self, master, files, output, pos=0):
+   def __init__(self, master, files, infos, pos=0):
       self.mouse_mode = SELECTION_MOUSE_MODE
       frame = Tkinter.Frame(master)
       frame.pack()
@@ -350,7 +378,7 @@ class App:
       hbar.pack(side=Tkinter.BOTTOM, fill=Tkinter.X)
       # files list and current file pointer
       self.files  = files
-      self.output = output
+      self.infos  = infos
       self.pos    = pos % len(files)
       self.update_sample()
       # button properties
@@ -363,18 +391,30 @@ class App:
       zo_button = Tkinter.Button(frame, text="Z -", fg="black",
                                  command=self.zoom_out)
       zo_button.pack(side=Tkinter.LEFT)
+      pf_button = Tkinter.Button(frame, text="<<-", fg="red",
+                                 command=self.go_previous_file)
+      pf_button.pack(side=Tkinter.LEFT)
       p_button = Tkinter.Button(frame, text="<- P", fg="green",
                                 command=self.go_previous)
       p_button.pack(side=Tkinter.LEFT)
       n_button = Tkinter.Button(frame, text="N ->", fg="green",
                                 command=self.go_next)
       n_button.pack(side=Tkinter.LEFT)
+      nf_button = Tkinter.Button(frame, text="->>", fg="red",
+                                 command=self.go_next_file)
+      nf_button.pack(side=Tkinter.LEFT)
       play_button = Tkinter.Button(frame, text="Play",
                                    command=self.sample.play)
       play_button.pack(side=Tkinter.LEFT)
       region_button = Tkinter.Button(frame, text="Z region",
                                      command=self.sample.zoom_region)
       region_button.pack(side=Tkinter.LEFT)
+      reload_button = Tkinter.Button(frame, text="Reload",
+                                     command=self.sample.load_info)
+      reload_button.pack(side=Tkinter.LEFT)
+      write_button = Tkinter.Button(frame, text="Write",
+                                    command=self.sample.write_info)
+      write_button.pack(side=Tkinter.LEFT)
       # label text
       self.update_label_text()
       # mouse actions
@@ -470,22 +510,29 @@ class App:
    def go_next(self):
       self.pos_label_text.set("")
       self.sample.go_next()
-      if self.sample.finished():
-         self.pos = (self.pos+1) % len(self.files)
-         self.update_sample()
       self.update_label_text()
 
    def go_previous(self):
       self.pos_label_text.set("")
-      if self.sample.started():
-         self.pos = (self.pos-1) % len(self.files)
-         self.update_sample()
-      else:
-         self.sample.go_previous()
+      self.sample.go_previous()
+      self.update_label_text()
+
+   def go_next_file(self):
+      self.pos_label_text.set("")
+      self.pos = (self.pos+1) % len(self.files)
+      self.update_sample()
+      self.update_label_text()
+
+   def go_previous_file(self):
+      self.pos_label_text.set("")
+      self.pos = (self.pos-1) % len(self.files)
+      self.update_sample()
       self.update_label_text()
        
    def update_sample(self):
-      self.sample = Sample(self.files[self.pos], self.canvas)
+      self.sample = Sample(self.files[self.pos],
+                           self.infos[self.pos],
+                           self.canvas)
 
 if __name__ == "__main__":
    # pyaudio
@@ -498,7 +545,10 @@ if __name__ == "__main__":
    print "   U. undo, elimina el ultimo bloque insertado"
    
    files = [ line.rstrip() for line in open(sys.argv[1]).readlines() ]
-   output = sys.argv[2]
+   infos = [ line.rstrip() for line in open(sys.argv[2]).readlines() ]
+   if len(files) != len(infos):
+      print "Incorrect number of files in the given lists"
+      exit(1)
    if len(sys.argv) > 3:
       pos = int(sys.argv[3])
    else:
@@ -506,6 +556,6 @@ if __name__ == "__main__":
       #
    if len(files) > 0:    
       root = Tkinter.Tk()
-      app  = App(root, files, output, pos)
+      app  = App(root, files, infos, pos)
       root.mainloop()
    PyAudio.terminate()
