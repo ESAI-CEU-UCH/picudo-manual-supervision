@@ -20,6 +20,9 @@
 
 local filename = arg[1]
 local m = matrix.fromFilename(filename)
+local spec  = m(':', { 1, m:dim(2)-4 })
+local class = m(':', { m:dim(2) - 3, m:dim(2) })
 local tmp = os.tmpname()
-ImageIO.write(Image(m:transpose():clone():adjust_range(0,1)), "wop.png")
+local m = matrix.join(2, spec:adjust_range(0,1), class:adjust_range(0,1))
+ImageIO.write(Image(m:transpose():clone()), "wop.png")
 os.execute("geeqie wop.png")

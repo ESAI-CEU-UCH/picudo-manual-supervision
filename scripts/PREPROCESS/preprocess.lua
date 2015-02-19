@@ -18,20 +18,21 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 -- IN THE SOFTWARE.
 
-if #arg ~= 2 then
-  fprintf(io.stderr, "SYNTAX: april-ann %s INPUT_WAV_MAT OUTPUT_FB_MAT\n",
+if #arg ~= 3 then
+  fprintf(io.stderr, "SYNTAX: april-ann %s INPUT_WAV_MAT INFOS OUTPUT_FB_MAT\n",
           arg[0])
   os.exit(1)
 end
-local wav_mats = arg[1] -- input
-local fb_mats  = arg[2] -- output
+local wav_mats   = arg[1] -- input
+local infos      = arg[2] -- infos list
+local fb_mats    = arg[3] -- output
 --
-local HZ       = 44100
-local WSIZE    = 23.2 -- mili seconds, approx 1024 samples
-local WADVANCE = 11.6 -- mili seconds, approx 512 samples
+local HZ         = 44100
+local WSIZE      = 23.2 -- mili seconds, approx 1024 samples
+local WADVANCE   = 11.6 -- mili seconds, approx 512 samples
 local LOWER_BAND = 1000 -- Hz
 local UPPER_BAND = 8000 -- Hz
-local NUM_FB     = 24
+local FB_LEN     = 24   -- number of filters in the filter bank
 --
 local function next_power_of_two(WSIZE)
   local p = 1
@@ -44,19 +45,19 @@ local WADVANCE = next_power_of_two(math.round(WADVANCE * HZ / 1000.0))
 local FFT_SIZE = WSIZE/2.0
 
 local function make_log_triangular_overlapped_filter(HZ, LOWER_BAND, UPPER_BAND,
-                                                     FFT_SIZE, NUM_FB)
+                                                     FFT_SIZE, FB_LEN)
   local function freq2log(fHz) return math.log10( 1 + fHz ) end
   local function log2freq(fHz) return ( 10.0^( fHz ) - 1.0 ) end
   --
   local log_min = freq2log(LOWER_BAND)
   local log_max = freq2log(UPPER_BAND)
   local BIN_WIDTH = 0.5*HZ / FFT_SIZE
-  local LOG_WIDTH = (log_max - log_min) / (NUM_FB + 1)
+  local LOG_WIDTH = (log_max - log_min) / (FB_LEN + 1)
   -- create a bank filter matrix (sparse matrix)
-  local filter = matrix(FFT_SIZE, NUM_FB):zeros()
+  local filter = matrix(FFT_SIZE, FB_LEN):zeros()
   local centers = {}
-  for i=1,NUM_FB+2 do centers[i] = log2freq(log_min + (i-1)*LOG_WIDTH) end
-  for i=1,NUM_FB do
+  for i=1,FB_LEN+2 do centers[i] = log2freq(log_min + (i-1)*LOG_WIDTH) end
+  for i=1,FB_LEN do
     local fb = filter:select(2,i)
     -- compute triangle
     local start  = math.min(math.round(centers[i] / BIN_WIDTH)+1, FFT_SIZE)
@@ -78,7 +79,32 @@ local function make_log_triangular_overlapped_filter(HZ, LOWER_BAND, UPPER_BAND,
   return function(fft,...) return fft * filter,... end
 end
 
+local function build_class_matrix(info_filename, result)
+  local N = result:dim(1)
+  local class = matrix(N, 4):zeros()
+  local wsize = WSIZE/HZ       -- in seconds
+  local wadvance = WADVANCE/HZ -- in seconds
+  local infos = matrix.fromTabFilename(info_filename)
+  for _,row in matrix.ext.iterate(infos) do
+    local start = math.round(row:get(1) / wadvance)
+    local stop  = math.round(row:get(2) / wadvance)
+    local diff  = stop - start + 1
+    local c1    = math.round( start + diff * 1.0/3.0 )
+    local c2    = math.round( start + diff * 2.0/3.0 )
+    if diff <= 3 then
+      fprintf(io.stderr,"WARNING!!! Underflow number of positive samples\n")
+      stop, diff = start + 3, 4
+    end
+    class({start, stop}, 1):ones()
+    class({start, c1-1}, 2):ones()
+    class({c1,    c2-1}, 3):ones()
+    class({c2,    stop}, 4):ones()
+  end
+  return class
+end
 -------------------------------------------------------------------------
+
+local function tee(...) print("#", ...) return ... end
 
 local function load_matrix(filename,...)
   local m = matrix.fromTabFilename(filename)
@@ -93,22 +119,25 @@ local apply_filter_bank = make_log_triangular_overlapped_filter(HZ,
                                                                 LOWER_BAND,
                                                                 UPPER_BAND,
                                                                 FFT_SIZE,
-                                                                NUM_FB)
+                                                                FB_LEN)
 local function apply_compress(fb,...)
   return fb:clone():clamp(1.0, math.huge):log(),...
 end
 
+local function write_data(result, info_filename, output_filename)
+  local class = build_class_matrix(info_filename, result)
+  local result = matrix.join(2, result, class)
+  result:toFilename(output_filename)
+end
+
 ------------------------------------------------------------------------------
 
-iterator.zip(iterator(io.lines(wav_mats)), iterator(io.lines(fb_mats))):
-  map(function(...)
-      print("#", ...)
-      return ...
-  end):
+iterator.zip(iterator(io.lines(wav_mats)),
+             iterator(io.lines(infos)),
+             iterator(io.lines(fb_mats))):
+  map(tee):
   map(load_matrix):
   map(apply_fft):
   map(apply_filter_bank):
   map(apply_compress):
-  apply(function(result, output_filename)
-      result:toFilename(output_filename)
-  end)
+  apply(write_data)
