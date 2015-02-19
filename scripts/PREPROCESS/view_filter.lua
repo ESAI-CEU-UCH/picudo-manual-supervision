@@ -21,8 +21,20 @@
 local gp = require "april_tools.gnuplot"()
 local f  = matrix.fromTabFilename(arg[1])
 
-local str = { "plot '#1' u 1 w l" }
-for i=2,f:dim(2) do str[#str+1] = ", '' u %d w l" % {i} end
+local function next_power_of_two(WSIZE)
+  local p = 1
+  while p < WSIZE do p=p*2 end
+  return p
+end
+
+local HZ        = 44100
+local WSIZE     = 23.2 -- mili seconds, approx 1024 samples
+local WSIZE     = next_power_of_two(math.round(WSIZE * HZ / 1000.0))
+local FFT_SIZE  = WSIZE/2.0
+local BIN_WIDTH = 0.5*HZ / FFT_SIZE
+
+local str = { "plot '#1' u ($0*%f):1 w l notitle lc 0" % { BIN_WIDTH } }
+for i=2,f:dim(2) do str[#str+1] = ", '' u ($0*%f):%d w l notitle lc 0" % { BIN_WIDTH, i } end
 local str = table.concat(str)
   
 gp:rawplot(f, str)

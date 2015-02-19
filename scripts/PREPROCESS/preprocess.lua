@@ -18,21 +18,21 @@
 -- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 -- IN THE SOFTWARE.
 
-if #arg ~= 3 then
-  fprintf(io.stderr, "SYNTAX: april-ann %s INPUT_WAV_MAT INFOS OUTPUT_FB_MAT\n",
+if #arg < 3 or #arg > 4 then
+  fprintf(io.stderr, "SYNTAX: april-ann %s INPUT_WAV_MAT INFOS OUTPUT_FB_MAT [FB_LEN=24]\n",
           arg[0])
   os.exit(1)
 end
 local wav_mats   = arg[1] -- input
 local infos      = arg[2] -- infos list
 local fb_mats    = arg[3] -- output
+local FB_LEN     = tonumber(arg[4] or 24) -- number of filters in the filter bank
 --
 local HZ         = 44100
 local WSIZE      = 23.2 -- mili seconds, approx 1024 samples
 local WADVANCE   = 11.6 -- mili seconds, approx 512 samples
 local LOWER_BAND = 1000 -- Hz
 local UPPER_BAND = 8000 -- Hz
-local FB_LEN     = 24   -- number of filters in the filter bank
 --
 local function next_power_of_two(WSIZE)
   local p = 1
