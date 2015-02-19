@@ -125,6 +125,7 @@ local function apply_compress(fb,...)
 end
 
 local function write_data(result, info_filename, output_filename)
+  collectgarbage("collect")
   local class = build_class_matrix(info_filename, result)
   local result = matrix.join(2, result, class)
   result:toFilename(output_filename)
