@@ -112,6 +112,18 @@ function cmd.add_dataset(opt)
   add_num(opt, "Context size", "context", "c", 0, true)
 end
 
+function cmd.add_bootstrap(opt)
+  assert(opt, "Needs a cmdOpt object")
+  add_str(opt, "Bunch size", "bsize", nil, 512, true)
+  add_str(opt, "Model", "model", "m", nil, true)
+  add_str(opt, "Data list", "list", "l", nil, true)
+  add_str(opt, "Output info list", "info", "i", nil, true)
+  add_num(opt, "Context size", "context", "c", 0, true)
+  add_num(opt, "Sampling frequency", "hz", "s", 44100, true)
+  add_num(opt, "Window size in ms", "wsize", nil, 23.2, true)
+  add_num(opt, "Window advance in ms", "wadvance", nil, 11.6, true)
+end
+
 function cmd.add_mlp(opt, MAX_LAYERS)
   assert(opt, "Needs a cmdOpt object")
   add_str(opt, "Activation function", "actf", "a", "tanh", true,
@@ -160,6 +172,10 @@ function cmd.add_optimizer(opt)
             layerwise_hyps[l] = { k, v }
   end)
   return global_hyps, layerwise_hyps
+end
+
+function cmd.add_save(opt)
+  add_str(opt, "Destination model filename", "dest", "d")
 end
 
 function cmd.parse(opt, arg)

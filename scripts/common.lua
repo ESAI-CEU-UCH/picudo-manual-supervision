@@ -20,7 +20,26 @@
 
 local common = {} -- exported table
 
-local cache = {}
+function common.extract_datasets_from_matrix(data)
+  collectgarbage("collect")
+  local current_fb_len = data:dim(2) - 4
+  FB_LEN = FB_LEN or current_fb_len
+  assert(current_fb_len == FB_LEN) -- sanity check
+  local spec_pat_size = { 1, current_fb_len }
+  local bin_cls_pat_size = { 1, 1 }
+  local bin_cls_offset   = { 0, current_fb_len }
+  local multi_lbl_cls_pat_size = { 1, 3 }
+  local multi_lbl_cls_offset   = { 0, current_fb_len+1 }
+  --
+  local ds_mat = dataset.matrix -- alias
+  local spec_ds  = ds_mat(data, { patternSize=spec_pat_size })
+  local bin_cls_ds    = ds_mat(data, { patternSize=bin_cls_pat_size,
+                                       offset=bin_cls_offset })
+  local multi_lbl_ds  = ds_mat(data, { patternSize=multi_lbl_cls_pat_size,
+                                       offset=multi_lbl_cls_offset })
+  return spec_ds, bin_cls_ds, multi_lbl_ds
+end
+
 -- receives a list with filter bank data + class labels, and returns three
 -- datasets: the input dataset, the binary classification output dataset, the
 -- multilabel classification output dataset (3 classes, start, middle, stop)
@@ -28,29 +47,9 @@ function common.load_dataset(fb_mats_list)
   assert(fb_mats_list, "Needs a filename as argument")
   local FB_LEN
   local ds_tbl = iterator(io.lines(fb_mats_list)):
-    map(function(filename)
-        cache[filename] = cache[filename] or matrix.fromFilename(filename)
-        return cache[filename]:clone()
-    end):
-    map(function(data)
-        collectgarbage("collect")
-        local current_fb_len = data:dim(2) - 4
-        FB_LEN = FB_LEN or current_fb_len
-        assert(current_fb_len == FB_LEN) -- sanity check
-        local spec_pat_size = { 1, current_fb_len }
-        local bin_cls_pat_size = { 1, 1 }
-        local bin_cls_offset   = { 0, current_fb_len }
-        local multi_lbl_cls_pat_size = { 1, 3 }
-        local multi_lbl_cls_offset   = { 0, current_fb_len+1 }
-        --
-        local ds_mat = dataset.matrix -- alias
-        local spec_ds  = ds_mat(data, { patternSize=spec_pat_size })
-        local bin_cls_ds    = ds_mat(data, { patternSize=bin_cls_pat_size,
-                                             offset=bin_cls_offset })
-        local multi_lbl_ds  = ds_mat(data, { patternSize=multi_lbl_cls_pat_size,
-                                             offset=multi_lbl_cls_offset })
-        return { spec_ds, bin_cls_ds, multi_lbl_ds }
-    end):
+    map(matrix.fromFilename):
+    map(common.extract_datasets_from_matrix):
+    map(table.pack):
     table()
   local input_ds = iterator(ds_tbl):field(1):table()
   local bin_output_ds = iterator(ds_tbl):field(2):table()
@@ -218,8 +217,8 @@ function common.compute_auc(trainer, data)
   local out = trainer:calculate(data.input_dataset:toMatrix()):exp()
   local tgt = data.output_dataset:toMatrix()
   local roc = metrics.roc(out,tgt)
-  local curve = roc:compute_curve()
-  curve:toTabFilename("curve")
+  -- local curve = roc:compute_curve()
+  -- curve:toTabFilename("curve")
   return roc:compute_area()
 end
 
@@ -257,10 +256,21 @@ function common.mlp_training_loop(params, trainer, train_data,
   end
   --
   print(va_loss, te_loss)
-  local out = best:calculate( val_data.input_dataset:toMatrix() ):exp()
-  local out = matrix.join(2, out, val_data.output_dataset:toMatrix())
-  out:toTabFilename("out")
+  -- local out = best:calculate( val_data.input_dataset:toMatrix() ):exp()
+  -- local out = matrix.join(2, out, val_data.output_dataset:toMatrix())
+  -- out:toTabFilename("out")
   return best
+end
+
+function common.mkdir(path)
+  os.execute("mkdir -p %s 2> /dev/null"%{ path })
+end
+
+function common.save_result(params, best, mean_dev)
+  if params.dest then
+    common.mkdir(params.dest:dirname())
+    util.serialize({ mean_dev=mean_dev, model=best }, params.dest)
+  end
 end
 
 return common

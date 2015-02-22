@@ -29,6 +29,7 @@ cmd.add_dataset(opt)
 cmd.add_trainer(opt, MAX_LAYERS)
 cmd.add_mlp(opt, MAX_LAYERS)
 local global_hyps, layerwise_hyps = cmd.add_optimizer(opt)
+cmd.add_save(opt)
 --
 local params  = cmd.parse(opt, arg)
 opt = nil
@@ -78,6 +79,8 @@ common.set_trainer_options(trainer, global_hyps, layerwise_hyps)
 --
 local best = common.mlp_training_loop(params, trainer,
                                       train_data, val_data, test_data)
+common.save_result(params, best, mean_dev)
+
 
 -- local best = best:clone()
 -- local b1 = best:weights("b1")
